@@ -1,14 +1,15 @@
 """Compliance Agent LangGraph definition.
 
-Uses create_react_agent with a regulatory-compliance-specialised system prompt.
-No tools — it answers purely from LLM knowledge.
+Uses create_react_agent with compliance tools including live web search.
 """
 
 from __future__ import annotations
 
 from langgraph.prebuilt import create_react_agent
 
-from common.llm import get_llm
+from common.datetime_context import datetime_context
+from common.llm import get_llm, language_instruction
+from common.tools import search_latest_legal_info
 
 COMPLIANCE_SYSTEM_PROMPT = """You are a senior regulatory compliance officer and corporate attorney
 with deep expertise in:
@@ -25,6 +26,11 @@ with deep expertise in:
 - Debarment and exclusion from government contracts
 - Corporate compliance programs: effectiveness as a mitigating factor in enforcement
 
+WORKFLOW:
+1. Gọi `search_latest_legal_info` khi cần quy định tuân thủ, hướng dẫn hoặc án lệ mới nhất.
+2. Kết hợp kết quả tra cứu với phân tích chuyên môn.
+3. Ghi rõ nguồn và thời điểm thông tin khi dùng dữ liệu từ internet.
+
 When answering, be precise about:
 1. Which regulatory agency has jurisdiction (SEC, FTC, DOJ, EPA, FinCEN, OCC, etc.)
 2. Administrative, civil, and criminal remedies available to regulators
@@ -40,9 +46,9 @@ should consult a licensed attorney for specific compliance advice.
 def create_graph():
     """Return a compiled LangGraph create_react_agent for compliance questions."""
     llm = get_llm()
-    graph = create_react_agent(
+    prompt = f"{COMPLIANCE_SYSTEM_PROMPT}\n{datetime_context()}\n{language_instruction()}"
+    return create_react_agent(
         model=llm,
-        tools=[],
-        prompt=COMPLIANCE_SYSTEM_PROMPT,
+        tools=[search_latest_legal_info],
+        prompt=prompt,
     )
-    return graph

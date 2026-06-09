@@ -1,10 +1,10 @@
-"""Stage 1: Direct LLM Calling
+"""Stage 1: Gọi LLM trực tiếp
 
-The simplest way to use an LLM — send a message, get a response.
-No tools, no memory, no agents. Just a direct API call.
+Cách đơn giản nhất dùng LLM — gửi message, nhận response.
+Không tools, không memory, không agent. Chỉ là một API call.
 
-This is stateless: the LLM has no access to external data sources,
-cannot look things up, and relies entirely on its training data.
+Stateless: LLM không truy cập nguồn dữ liệu bên ngoài,
+không tra cứu được, chỉ dựa vào dữ liệu training.
 """
 
 import asyncio
@@ -14,25 +14,31 @@ import sys
 # Allow running directly: python stages/stage_1_direct_llm/main.py
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8")
+
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from common.llm import get_llm
+from common.llm import get_llm, language_instruction
 
-QUESTION = "What are the legal consequences if a company breaches a non-disclosure agreement?"
+QUESTION = (
+    "Công ty vi phạm thỏa thuận bảo mật thông tin (NDA) thì chịu "
+    "hậu quả pháp lý gì?"
+)
 
 
 async def main():
     print("=" * 70)
-    print("STAGE 1: Direct LLM Calling")
+    print("STAGE 1: Gọi LLM trực tiếp (Direct LLM Calling)")
     print("=" * 70)
     print()
-    print("[How it works]")
-    print("  1. We send a system prompt + user question directly to the LLM")
-    print("  2. The LLM responds from its training data only")
-    print("  3. No tools, no retrieval, no external knowledge")
+    print("[Cách hoạt động]")
+    print("  1. Gửi system prompt + câu hỏi trực tiếp tới LLM")
+    print("  2. LLM trả lời chỉ dựa trên dữ liệu training")
+    print("  3. Không tools, không retrieval, không kiến thức ngoài")
     print()
-    print(f"Question: {QUESTION}")
+    print(f"Câu hỏi: {QUESTION}")
     print("-" * 70)
 
     llm = get_llm()
@@ -40,26 +46,27 @@ async def main():
     messages = [
         SystemMessage(
             content=(
-                "You are a legal expert. Provide a clear, concise analysis "
-                "of the legal question asked. Keep your response under 300 words."
+                "Bạn là chuyên gia pháp lý. Phân tích rõ ràng, súc tích "
+                "câu hỏi pháp lý được đặt ra. Giữ câu trả lời dưới 300 từ. "
+                f"{language_instruction()}"
             )
         ),
         HumanMessage(content=QUESTION),
     ]
 
-    print("\n>>> Calling LLM directly (no tools, no RAG)...\n")
+    print("\n>>> Đang gọi LLM trực tiếp (không tools, không RAG)...\n")
     response = await llm.ainvoke(messages)
     print(response.content)
 
     print()
     print("-" * 70)
-    print("[Limitations of Stage 1]")
-    print("  - Stateless: no conversation memory between calls")
-    print("  - No tools: cannot search databases or calculate damages")
-    print("  - Knowledge cutoff: only knows what was in training data")
-    print("  - No grounding: cannot cite specific statutes or current case law")
+    print("[Hạn chế của Stage 1]")
+    print("  - Stateless: không nhớ hội thoại giữa các lần gọi")
+    print("  - Không tools: không tra cứu database hay tính thiệt hại")
+    print("  - Knowledge cutoff: chỉ biết dữ liệu trong training")
+    print("  - Không grounding: khó trích dẫn điều luật/án lệ cụ thể")
     print()
-    print("Next: Stage 2 adds RAG and tools to ground responses in real data.")
+    print("Tiếp theo: Stage 2 thêm RAG và tools để căn cứ vào dữ liệu thực.")
     print("=" * 70)
 
 

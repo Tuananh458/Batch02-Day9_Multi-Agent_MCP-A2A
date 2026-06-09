@@ -7,6 +7,12 @@ import asyncio
 import os
 import sys
 
+# Reconfigure stdout to support UTF-8 on Windows console
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 import httpx
 from dotenv import load_dotenv
 
@@ -60,8 +66,11 @@ async def main() -> None:
             params=MSP(message=message),
         )
 
+        import time
         print("Sending request (this may take 30-60s while agents chain)...\n")
+        start_time = time.perf_counter()
         response = await client.send_message(request)
+        latency = time.perf_counter() - start_time
 
         # Parse response
         result_text = ""
@@ -91,6 +100,8 @@ async def main() -> None:
         else:
             print("No text response received. Raw response:")
             print(response)
+
+        print(f"\nLatency: {latency:.2f} seconds")
 
 
 if __name__ == "__main__":

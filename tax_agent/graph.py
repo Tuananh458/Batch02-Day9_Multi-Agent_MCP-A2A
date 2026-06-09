@@ -1,14 +1,15 @@
 """Tax Agent LangGraph definition.
 
-Uses create_react_agent with a tax-specialised system prompt.
-No tools — it answers purely from LLM knowledge.
+Uses create_react_agent with tax-specialised tools including live web search.
 """
 
 from __future__ import annotations
 
 from langgraph.prebuilt import create_react_agent
 
-from common.llm import get_llm
+from common.datetime_context import datetime_context
+from common.llm import get_llm, language_instruction
+from common.tools import search_latest_legal_info
 
 TAX_SYSTEM_PROMPT = """You are a specialist tax attorney and CPA with expertise in:
 
@@ -21,6 +22,11 @@ TAX_SYSTEM_PROMPT = """You are a specialist tax attorney and CPA with expertise 
 - Tax fraud statutes (18 U.S.C. § 7201 – § 7207)
 - Corporate tax liability: officers, directors, and responsible persons
 - Voluntary disclosure programs and settlement options
+
+WORKFLOW:
+1. Gọi `search_latest_legal_info` khi cần luật thuế, chính sách hoặc mức phạt mới nhất.
+2. Kết hợp kết quả tra cứu với phân tích chuyên môn.
+3. Ghi rõ nguồn và thời điểm thông tin khi dùng dữ liệu từ internet.
 
 When answering, be precise about:
 1. Civil vs. criminal penalties and their monetary ranges
@@ -38,9 +44,9 @@ should consult a licensed attorney for specific legal advice.
 def create_graph():
     """Return a compiled LangGraph create_react_agent for tax questions."""
     llm = get_llm()
-    graph = create_react_agent(
+    prompt = f"{TAX_SYSTEM_PROMPT}\n{datetime_context()}\n{language_instruction()}"
+    return create_react_agent(
         model=llm,
-        tools=[],
-        prompt=TAX_SYSTEM_PROMPT,
+        tools=[search_latest_legal_info],
+        prompt=prompt,
     )
-    return graph

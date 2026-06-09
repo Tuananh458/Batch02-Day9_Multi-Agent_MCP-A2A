@@ -10,12 +10,17 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.append(r"d:\solution\Day08_RAG_pipeline_cohort2\group_project")
+from src.task5_semantic_search import semantic_search
+
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8")
 
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
 
-from common.llm import get_llm
+from common.llm import get_llm, language_instruction
 
 # ---------------------------------------------------------------------------
 # Simulated legal knowledge base (in production, this would be a vector store)
@@ -90,21 +95,19 @@ LEGAL_KNOWLEDGE = [
 
 @tool
 def search_legal_database(query: str) -> str:
-    """Search the legal knowledge base for relevant statutes, case law, and legal principles."""
-    query_words = set(query.lower().split())
-    scored = []
-    for entry in LEGAL_KNOWLEDGE:
-        overlap = len(query_words & set(entry["keywords"]))
-        if overlap > 0:
-            scored.append((overlap, entry))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    top = scored[:2]
-    if not top:
-        return "No relevant legal sources found for this query."
-    results = []
-    for _, entry in top:
-        results.append(f"[{entry['id']}] {entry['text']}")
-    return "\n\n".join(results)
+    """Tìm kiếm trong cơ sở dữ liệu tri thức luật (ChromaDB) từ dự án Day 8."""
+    try:
+        results = semantic_search(query, top_k=2)
+        if not results:
+            return "Không tìm thấy thông tin liên quan trong cơ sở dữ liệu luật."
+        
+        formatted = []
+        for r in results:
+            source = r['metadata'].get('source', 'unknown')
+            formatted.append(f"[Nguồn: {source}] (Score: {r['score']:.4f})\n{r['content']}")
+        return "\n\n---\n\n".join(formatted)
+    except Exception as e:
+        return f"Lỗi khi truy vấn cơ sở dữ liệu: {str(e)}"
 
 
 @tool
@@ -137,7 +140,7 @@ def calculate_damages(breach_type: str, contract_value: float) -> str:
 
 TOOLS = [search_legal_database, calculate_damages]
 
-QUESTION = "What are the legal consequences if a company breaches a non-disclosure agreement?"
+QUESTION = "Hình phạt đối với hành vi tàng trữ trái phép chất ma túy là gì và các hình thức hay biện pháp cai nghiện bắt buộc được quy định như thế nào?"
 
 
 async def main():
@@ -164,7 +167,8 @@ async def main():
                 "You are a legal expert with access to a legal knowledge base and a damage "
                 "calculator. Use the tools provided to ground your analysis in specific statutes "
                 "and case law. Always search the database before answering. "
-                "Keep your final response under 400 words."
+                "Keep your final response under 400 words. "
+                f"{language_instruction()}"
             )
         ),
         HumanMessage(content=QUESTION),

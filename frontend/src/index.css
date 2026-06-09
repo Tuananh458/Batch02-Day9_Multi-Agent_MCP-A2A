@@ -1,0 +1,61 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-heading: 'Outfit', system-ui, sans-serif;
+  
+  /* HSL colors for Light Mode */
+  --bg-light: 210 40% 98%;      /* Soft light background */
+  --card-light: 0 0% 100%;       /* White cards */
+  --primary: 262 83% 58%;        /* Primary purple/indigo */
+  --primary-glow: rgba(139, 92, 246, 0.06);
+  --success: 142 72% 29%;        /* High-contrast green */
+  --danger: 0 84% 45%;
+  --border: 214 32% 91%;         /* Light grey border */
+  --text-primary: 222 47% 11%;   /* Dark slate grey for primary text */
+  --text-muted: 215 16% 47%;     /* Secondary cool grey text */
+  
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: hsl(var(--bg-light));
+  background-image: 
+    radial-gradient(at 0% 0%, hsla(var(--primary), 0.05) 0px, transparent 40%),
+    radial-gradient(at 100% 100%, hsla(var(--primary), 0.03) 0px, transparent 40%);
+  color: hsl(var(--text-primary));
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  width: 100%;
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsla(var(--primary), 0.4);
+}

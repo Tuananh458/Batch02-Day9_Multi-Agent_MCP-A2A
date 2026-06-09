@@ -12,7 +12,8 @@ from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
 from a2a.types import Part, TextPart
 
-from customer_agent.graph import build_graph
+from customer_agent.context import context_id_var, depth_var, trace_id_var
+from customer_agent.graph import get_graph
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,6 @@ class CustomerAgentExecutor(AgentExecutor):
         context_id = context.context_id or str(uuid4())
         task_id = context.task_id or str(uuid4())
 
-        # Propagate or generate trace metadata
         metadata = context.message.metadata or {} if context.message else {}
         trace_id = metadata.get("trace_id", str(uuid4()))
         depth = int(metadata.get("delegation_depth", 0))
@@ -39,32 +39,26 @@ class CustomerAgentExecutor(AgentExecutor):
         await updater.submit()
         await updater.start_work()
 
-        try:
-            # Build a per-request graph so the tool closure captures this request's IDs
-            graph = build_graph(
-                trace_id=trace_id,
-                context_id=context_id,
-                depth=depth,
-            )
+        trace_token = trace_id_var.set(trace_id)
+        context_token = context_id_var.set(context_id)
+        depth_token = depth_var.set(depth)
 
+        try:
+            graph = get_graph()
             result = await graph.ainvoke(
                 {"messages": [HumanMessage(content=question)]},
                 config={"configurable": {"thread_id": context_id}},
             )
 
-            # Extract the last AI message from the result
             answer = ""
             for msg in reversed(result.get("messages", [])):
                 if hasattr(msg, "content") and msg.content:
-                    if not isinstance(msg, HumanMessage):
-                        # Skip ToolMessages, only want final AIMessage
-                        from langchain_core.messages import AIMessage
-                        if isinstance(msg, AIMessage):
-                            answer = msg.content
-                            break
+                    from langchain_core.messages import AIMessage
+                    if isinstance(msg, AIMessage):
+                        answer = msg.content
+                        break
 
             if not answer:
-                # Fallback: any non-human message content
                 for msg in reversed(result.get("messages", [])):
                     content = getattr(msg, "content", "")
                     if content and not isinstance(msg, HumanMessage):
@@ -72,7 +66,7 @@ class CustomerAgentExecutor(AgentExecutor):
                         break
 
             if not answer:
-                answer = "I was unable to process your legal question at this time."
+                answer = "Tôi không thể xử lý câu hỏi pháp lý của bạn lúc này."
 
             await updater.add_artifact(
                 parts=[Part(root=TextPart(text=answer))],
@@ -84,9 +78,13 @@ class CustomerAgentExecutor(AgentExecutor):
             logger.exception("CustomerAgent execution error: %s", exc)
             await updater.failed(
                 updater.new_agent_message(
-                    parts=[Part(root=TextPart(text=f"Request failed: {exc}"))]
+                    parts=[Part(root=TextPart(text=f"Yêu cầu thất bại: {exc}"))]
                 )
             )
+        finally:
+            trace_id_var.reset(trace_token)
+            context_id_var.reset(context_token)
+            depth_var.reset(depth_token)
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         task_id = context.task_id or str(uuid4())

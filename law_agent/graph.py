@@ -17,7 +17,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.constants import Send
 from langgraph.graph import END, StateGraph
 
-from common.llm import get_llm
+from common.datetime_context import datetime_context
+from common.live_search import fetch_latest_context
+from common.llm import get_llm, language_instruction
 
 logger = logging.getLogger(__name__)
 
@@ -54,15 +56,23 @@ class LawState(TypedDict):
 async def analyze_law(state: LawState) -> dict:
     """LLM analysis from a contract / general law perspective."""
     llm = get_llm()
+    live_context = await fetch_latest_context(state["question"])
     messages = [
         SystemMessage(
             content=(
                 "You are a senior corporate litigation attorney specialising in contract law, "
                 "tort law, and general business law. Analyse the legal aspects of the question "
-                "thoroughly, covering relevant statutes, case law principles, and liability exposure."
+                "thoroughly, covering relevant statutes, case law principles, and liability exposure. "
+                "Ưu tiên thông tin mới nhất từ phần 'Tra cứu internet' bên dưới khi có. "
+                f"{datetime_context()} {language_instruction()}"
             )
         ),
-        HumanMessage(content=state["question"]),
+        HumanMessage(
+            content=(
+                f"Câu hỏi:\n{state['question']}\n\n"
+                f"---\n{live_context}"
+            )
+        ),
     ]
     result = await llm.ainvoke(messages)
     return {"law_analysis": result.content}
@@ -195,7 +205,8 @@ async def aggregate(state: LawState) -> dict:
                 "comprehensive, well-structured response for the client. Combine the following "
                 "analyses into a cohesive answer with clear sections. Avoid redundancy. "
                 "End with a brief disclaimer that the analysis is educational and the client "
-                "should consult licensed attorneys for their specific situation."
+                "should consult licensed attorneys for their specific situation. "
+                f"{datetime_context()} {language_instruction()}"
             )
         ),
         HumanMessage(content=combined),

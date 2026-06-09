@@ -12,11 +12,16 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.append(r"d:\solution\Day08_RAG_pipeline_cohort2\group_project")
+from src.task5_semantic_search import semantic_search
+
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8")
 
 from dotenv import load_dotenv
 from langchain_core.tools import tool
 
-from common.llm import get_llm
+from common.llm import get_llm, language_instruction
 
 # ---------------------------------------------------------------------------
 # Expanded knowledge base (law + tax + compliance entries)
@@ -86,37 +91,34 @@ LEGAL_KNOWLEDGE = [
 
 
 # ---------------------------------------------------------------------------
-# Tools
+# Tools (Công cụ hỗ trợ)
 # ---------------------------------------------------------------------------
 
 @tool
 def search_legal_database(query: str) -> str:
-    """Search the legal knowledge base for relevant statutes, case law, and legal principles.
-
-    Args:
-        query: Natural language search query about a legal topic.
-    """
-    query_words = set(query.lower().split())
-    scored = []
-    for entry in LEGAL_KNOWLEDGE:
-        overlap = len(query_words & set(entry["keywords"]))
-        if overlap > 0:
-            scored.append((overlap, entry))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    top = scored[:2]
-    if not top:
-        return "No relevant legal sources found."
-    return "\n\n".join(f"[{e['id']}] {e['text']}" for _, e in top)
+    """Tìm kiếm trong cơ sở dữ liệu tri thức luật (ChromaDB) từ dự án Day 8."""
+    try:
+        results = semantic_search(query, top_k=2)
+        if not results:
+            return "Không tìm thấy thông tin liên quan trong cơ sở dữ liệu luật."
+        
+        formatted = []
+        for r in results:
+            source = r['metadata'].get('source', 'unknown')
+            formatted.append(f"[Nguồn: {source}] (Score: {r['score']:.4f})\n{r['content']}")
+        return "\n\n---\n\n".join(formatted)
+    except Exception as e:
+        return f"Lỗi khi truy vấn cơ sở dữ liệu: {str(e)}"
 
 
 @tool
 def calculate_penalty(violation_type: str, severity: str, annual_revenue: float) -> str:
-    """Calculate estimated legal penalties based on violation type, severity, and company revenue.
+    """Tính toán mức phạt pháp lý ước tính dựa trên loại vi phạm, mức độ nghiêm trọng và doanh thu công ty.
 
     Args:
-        violation_type: Type of violation (e.g., 'tax_evasion', 'data_privacy', 'contract_breach').
-        severity: Severity level ('low', 'medium', 'high').
-        annual_revenue: Company's annual revenue in USD.
+        violation_type: Loại vi phạm (ví dụ: 'tax_evasion', 'data_privacy', 'contract_breach').
+        severity: Mức độ nghiêm trọng ('low', 'medium', 'high').
+        annual_revenue: Doanh thu hàng năm của công ty bằng USD.
     """
     severity_multipliers = {"low": 0.01, "medium": 0.05, "high": 0.10}
     multiplier = severity_multipliers.get(severity.lower(), 0.05)
@@ -125,65 +127,99 @@ def calculate_penalty(violation_type: str, severity: str, annual_revenue: float)
 
     type_lower = violation_type.lower()
     if "tax" in type_lower:
-        extra = "Plus potential criminal charges (up to 5 years) and 75% civil fraud penalty."
+        extra = "Có thể bị truy cứu trách nhiệm hình sự (lên đến 5 năm tù) và phạt 75% dân sự do gian lận thuế."
     elif "privacy" in type_lower or "data" in type_lower:
-        extra = "Plus GDPR fines up to 4% of global revenue and class action exposure."
+        extra = "Có thể bị phạt thêm theo GDPR lên tới 4% doanh thu toàn cầu và đối mặt vụ kiện tập thể."
     elif "contract" in type_lower:
-        extra = "Plus consequential damages, attorney's fees, and possible injunction."
+        extra = "Phải chịu thêm thiệt hại hệ quả, chi phí luật sư và có thể bị lệnh đình chỉ/áp chế."
     else:
-        extra = "Additional regulatory sanctions may apply."
+        extra = "Có thể áp dụng thêm các biện pháp trừng phạt pháp lý khác."
 
     return (
-        f"Penalty Estimate for {violation_type} ({severity} severity):\n"
-        f"  Base penalty: ${base_penalty:,.2f}\n"
-        f"  Revenue basis: ${annual_revenue:,.2f}\n"
-        f"  {extra}"
+        f"Ước tính mức phạt cho {violation_type} (Mức độ nghiêm trọng: {severity}):\n"
+        f"  Phạt cơ bản: ${base_penalty:,.2f}\n"
+        f"  Doanh thu cơ sở: ${annual_revenue:,.2f}\n"
+        f"  Lưu ý thêm: {extra}"
     )
 
 
 @tool
 def check_compliance_requirements(industry: str, company_size: str) -> str:
-    """Check which regulatory compliance frameworks apply to a company.
+    """Kiểm tra các khung tuân thủ pháp lý áp dụng cho công ty.
 
     Args:
-        industry: The company's industry (e.g., 'technology', 'finance', 'healthcare').
-        company_size: Company size ('startup', 'mid-size', 'enterprise').
+        industry: Ngành nghề kinh doanh (ví dụ: 'technology', 'finance', 'healthcare').
+        company_size: Quy mô công ty ('startup', 'mid-size', 'enterprise').
     """
     frameworks = {
-        "technology": ["CCPA/CPRA", "GDPR (if EU users)", "FTC Act Section 5", "SOC 2"],
-        "finance": ["SOX", "BSA/AML", "Dodd-Frank", "SEC Regulations", "FCPA"],
-        "healthcare": ["HIPAA", "HITECH Act", "FTC Health Breach Notification", "AKS"],
+        "technology": ["CCPA/CPRA", "GDPR (nếu có người dùng EU)", "FTC Act Section 5", "SOC 2"],
+        "finance": ["SOX", "BSA/AML", "Dodd-Frank", "Quy định SEC", "FCPA"],
+        "healthcare": ["HIPAA", "HITECH Act", "Thông báo vi phạm dữ liệu sức khỏe của FTC", "AKS"],
     }
 
     size_extras = {
-        "startup": "Consider: SOC 2 Type II for investor confidence.",
-        "mid-size": "Consider: dedicated compliance officer and annual audits.",
-        "enterprise": "Required: full compliance program, board oversight, whistleblower hotline.",
+        "startup": "Khuyến nghị: SOC 2 Type II để tăng lòng tin với nhà đầu tư.",
+        "mid-size": "Khuyến nghị: Có nhân sự phụ trách tuân thủ chuyên trách và thực hiện kiểm toán hàng năm.",
+        "enterprise": "Yêu cầu bắt buộc: Chương trình tuân thủ đầy đủ, giám sát của hội đồng quản trị, đường dây nóng tố giác.",
     }
 
     industry_lower = industry.lower()
-    applicable = frameworks.get(industry_lower, ["FTC Act Section 5", "State consumer protection laws"])
+    applicable = frameworks.get(industry_lower, ["FTC Act Section 5", "Luật bảo vệ người tiêu dùng của bang"])
     size_note = size_extras.get(company_size.lower(), "")
 
     return (
-        f"Applicable frameworks for {industry} ({company_size}):\n"
+        f"Khung tuân thủ áp dụng cho ngành {industry} ({company_size}):\n"
         f"  {', '.join(applicable)}\n"
         f"  {size_note}"
     )
 
 
-TOOLS = [search_legal_database, calculate_penalty, check_compliance_requirements]
+@tool
+def search_case_law(keywords: str) -> str:
+    """Tìm kiếm án lệ pháp lý theo từ khóa hoặc chủ đề pháp lý liên quan.
 
+    Args:
+        keywords: Từ khóa tìm kiếm án lệ (ví dụ: 'breach', 'contract', 'negligence', 'vi phạm', 'hợp đồng', 'bất cẩn').
+    """
+    cases = {
+        "breach": "Hadley v. Baxendale (1854) - Consequential damages (Thiệt hại hệ quả do vi phạm hợp đồng)",
+        "vi phạm": "Hadley v. Baxendale (1854) - Consequential damages (Thiệt hại hệ quả do vi phạm hợp đồng)",
+        "negligence": "Donoghue v. Stevenson (1932) - Duty of care (Nghĩa vụ cẩn trọng)",
+        "bất cẩn": "Donoghue v. Stevenson (1932) - Duty of care (Nghĩa vụ cẩn trọng)",
+        "contract": "Carlill v. Carbolic Smoke Ball Co (1893) - Unilateral contract (Hợp đồng đơn phương)",
+        "hợp đồng": "Carlill v. Carbolic Smoke Ball Co (1893) - Unilateral contract (Hợp đồng đơn phương)",
+    }
+    
+    keywords_lower = keywords.lower()
+    found_cases = []
+    
+    for key, case in cases.items():
+        if key in keywords_lower:
+            found_cases.append(case)
+            
+    if found_cases:
+        return "\n".join(list(set(found_cases)))
+        
+    return "Không tìm thấy án lệ phù hợp cho từ khóa: " + keywords
+
+
+TOOLS = [search_legal_database, calculate_penalty, check_compliance_requirements, search_case_law]
+
+# Câu hỏi phức tạp tích hợp ma túy, phạt rò rỉ dữ liệu, tuân thủ công nghệ startup và án lệ vi phạm hợp đồng
 QUESTION = (
-    "A tech startup with $5M revenue was caught sharing user data without consent "
-    "and failed to pay taxes on overseas revenue. What are all the legal consequences?"
+    "Một người bị cáo buộc tội tàng trữ trái phép chất ma túy. Đồng thời, doanh nghiệp của họ "
+    "là một startup công nghệ có doanh thu hàng năm là 5 triệu USD bị nghi ngờ rò rỉ dữ liệu người dùng "
+    "ở mức độ nghiêm trọng cao (high severity), và vi phạm hợp đồng (breach of contract) dịch vụ với đối tác. "
+    "Hãy tra cứu hình phạt tội tàng trữ ma túy trong cơ sở dữ liệu luật, tính toán mức phạt tài chính ước tính "
+    "cho vi phạm 'data_privacy', kiểm tra các khung tuân thủ áp dụng cho công ty, và tìm kiếm án lệ liên quan."
 )
 
 SYSTEM_PROMPT = (
-    "You are a legal analyst agent. You have access to tools for searching legal databases, "
-    "calculating penalties, and checking compliance requirements. Use these tools to build "
-    "a comprehensive analysis. Search for each legal area separately — data privacy, tax, "
-    "and compliance. Keep your final answer under 500 words."
+    "Bạn là một trợ lý phân tích pháp lý chuyên nghiệp. Bạn có quyền truy cập vào các công cụ để tìm kiếm cơ sở dữ liệu luật, "
+    "tìm kiếm án lệ liên quan, tính toán mức phạt hành chính và kiểm tra yêu cầu tuân thủ. Hãy sử dụng những công cụ này "
+    "để xây dựng một phân tích toàn diện. Tìm kiếm thông tin cho từng lĩnh vực pháp lý riêng biệt — ma túy, bảo mật thông tin, "
+    "tuân thủ và vi phạm hợp đồng. Hãy tóm tắt câu trả lời cuối cùng của bạn dưới 500 từ. "
+    f"{language_instruction()}"
 )
 
 
@@ -191,21 +227,22 @@ async def main():
     from langgraph.prebuilt import create_react_agent
 
     print("=" * 70)
-    print("STAGE 3: Single Agent (ReAct Loop)")
+    print("STAGE 3: Single Agent (Vòng lặp ReAct)")
     print("=" * 70)
     print()
-    print("[How it works]")
-    print("  1. An autonomous agent receives a complex multi-part question")
-    print("  2. It reasons about what tools to call (Think)")
-    print("  3. It calls a tool (Act)")
-    print("  4. It observes the result and decides next steps (Observe)")
-    print("  5. It repeats until it has enough information for a final answer")
+    print("[Cách hoạt động]")
+    print("  1. Agent tự trị nhận được một câu hỏi phức tạp gồm nhiều phần")
+    print("  2. Agent suy nghĩ về công cụ cần gọi (Think)")
+    print("  3. Agent tiến hành gọi công cụ (Act)")
+    print("  4. Agent quan sát kết quả trả về và quyết định bước tiếp theo (Observe)")
+    print("  5. Lặp lại cho đến khi có đủ thông tin để đưa ra câu trả lời cuối cùng")
     print()
-    print(f"Question: {QUESTION}")
+    print(f"Câu hỏi: {QUESTION}")
     print("-" * 70)
 
     llm = get_llm()
-    graph = create_react_agent(model=llm, tools=TOOLS, prompt=SYSTEM_PROMPT)
+    # Kích hoạt debug=True để hiển thị chi tiết quá trình suy nghĩ trong vòng lặp ReAct của LangGraph
+    graph = create_react_agent(model=llm, tools=TOOLS, prompt=SYSTEM_PROMPT, debug=True)
 
     inputs = {"messages": [{"role": "user", "content": QUESTION}]}
 
@@ -216,32 +253,32 @@ async def main():
             messages = update.get("messages", [])
             for msg in messages:
                 if hasattr(msg, "tool_calls") and msg.tool_calls:
-                    print(f"\n[Step {step}] THINK + ACT (node: {node_name})")
+                    print(f"\n[Bước {step}] SUY NGHĨ + HÀNH ĐỘNG (node: {node_name})")
                     for tc in msg.tool_calls:
-                        print(f"  Tool: {tc['name']}")
-                        print(f"  Args: {tc['args']}")
+                        print(f"  Gọi Tool: {tc['name']}")
+                        print(f"  Đối số (Args): {tc['args']}")
                 elif msg.type == "tool":
-                    print(f"\n[Step {step}] OBSERVE (node: {node_name})")
+                    print(f"\n[Bước {step}] QUAN SÁT (node: {node_name})")
                     content = msg.content
-                    print(f"  Result: {content[:300]}{'...' if len(content) > 300 else ''}")
+                    print(f"  Kết quả: {content[:300]}{'...' if len(content) > 300 else ''}")
                 elif msg.type == "ai" and msg.content:
-                    print(f"\n[Step {step}] FINAL ANSWER (node: {node_name})")
+                    print(f"\n[Bước {step}] CÂU TRẢ LỜI CUỐI CÙNG (node: {node_name})")
                     print("-" * 70)
                     print(msg.content)
 
     print()
     print("-" * 70)
-    print("[Improvements over Stage 2]")
-    print("  + Autonomous: agent decides which tools to call and when")
-    print("  + Multi-step reasoning: can search, calculate, search again")
-    print("  + Handles complex queries: breaks problems into sub-tasks")
+    print("[Những điểm cải tiến so với Stage 2]")
+    print("  + Tự trị (Autonomous): agent tự quyết định gọi tool nào và gọi khi nào")
+    print("  + Suy luận nhiều bước (Multi-step reasoning): có thể tìm kiếm, tính toán rồi lại tìm kiếm tiếp")
+    print("  + Xử lý câu hỏi phức tạp: chia nhỏ bài toán thành các tác vụ thành phần")
     print()
-    print("[Limitations of Stage 3]")
-    print("  - Single agent: one LLM handles all domains (law, tax, compliance)")
-    print("  - No specialisation: same system prompt for all legal areas")
-    print("  - Bottleneck: sequential tool calls, no parallelism")
+    print("[Hạn chế của Stage 3]")
+    print("  - Agent đơn lẻ (Single agent): một LLM duy nhất xử lý mọi lĩnh vực (luật chung, thuế, tuân thủ)")
+    print("  - Không có tính chuyên môn hóa cao: cùng một system prompt cho tất cả các mảng luật khác nhau")
+    print("  - Điểm nghẽn cổ chai (Bottleneck): các lượt gọi tool chạy tuần tự, chưa thể chạy song song")
     print()
-    print("Next: Stage 4 splits this into specialised agents that work in parallel.")
+    print("Tiếp theo: Stage 4 chia tách hệ thống này thành các sub-agent chuyên môn hóa hoạt động song song.")
     print("=" * 70)
 
 
